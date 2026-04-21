@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MQTT Forwarder</title>
+    <style>
+      :root {
+        --bg: #f7f6f2;
+        --card: #fffaf1;
+        --ink: #1f2937;
+        --muted: #6b7280;
+        --accent: #155e75;
+        --accent-2: #f59e0b;
+        --line: #e5dccd;
+      }
+      body {
+        margin: 0;
+        font-family: "Helvetica Neue", "Noto Sans SC", sans-serif;
+        background:
+          radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 30%),
+          linear-gradient(180deg, #faf7ef 0%, var(--bg) 100%);
+        color: var(--ink);
+      }
+      .wrap {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      .hero {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 36px;
+        letter-spacing: -0.03em;
+      }
+      .sub {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .panel {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px;
+        box-shadow: 0 10px 30px rgba(31, 41, 55, 0.06);
+        margin-bottom: 18px;
+      }
+      .row {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #f3efe6;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .toggle {
+        display: inline-flex;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .toggle button {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 10px 16px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .toggle button.active {
+        background: var(--accent);
+        color: white;
+      }
+      .toggle button.secondary.active {
+        background: var(--accent-2);
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 10px;
+      }
+      li {
+        padding: 14px;
+        border-radius: 14px;
+        background: white;
+        border: 1px solid var(--line);
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 6px;
+      }
+      .status {
+        font-weight: 700;
+      }
+      .status.online {
+        color: #0f766e;
+      }
+      .status.offline {
+        color: #b91c1c;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <h1>MQTT 消息转发</h1>
+        <div class="sub">
+          这个页面会显示最近收到的设备上下线事件。模式为“直接转发”时，浏览器会尝试弹出系统通知；模式为“只写日志”时，仅保留日志展示。
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row">
+          <div class="badge" id="modeBadge">模式加载中</div>
+          <div class="toggle">
+            <button id="notifyBtn">直接转发</button>
+            <button id="logBtn" class="secondary">只写日志</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top: 12px;">
+          说明：这里的“直接转发”是把 MQTT 事件立刻推送到当前打开的网页，并调用浏览器通知能力。
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row" style="margin-bottom: 12px;">
+          <strong>最近事件</strong>
+          <span class="hint">日志接口：<code>/logs</code></span>
+        </div>
+        <ul id="eventList"></ul>
+      </section>
+    </main>
+
+    <script>
+      const modeBadge = document.getElementById("modeBadge");
+      const notifyBtn = document.getElementById("notifyBtn");
+      const logBtn = document.getElementById("logBtn");
+      const eventList = document.getElementById("eventList");
+
+      let currentMode = "notify";
+
+      function setModeUI(mode) {
+        currentMode = mode;
+        const label = mode === "notify" ? "当前模式：直接转发" : "当前模式：只写日志";
+        modeBadge.textContent = label;
+        notifyBtn.classList.toggle("active", mode === "notify");
+        logBtn.classList.toggle("active", mode === "log");
+      }
+
+      function renderEvent(item, prepend = false) {
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <div>${item.message}</div>
+          <div class="meta">
+            <span class="status ${item.status}">${item.status}</span>
+            · ${item.received_at}
+            · ${item.device_name}
+            · ${item.mac || "unknown"}
+          </div>
+        `;
+        if (prepend) {
+          eventList.prepend(li);
+          while (eventList.children.length > 200) {
+            eventList.removeChild(eventList.lastChild);
+          }
+        } else {
+          eventList.appendChild(li);
+        }
+      }
+
+      async function loadStatus() {
+        const response = await fetch("/api/status");
+        const data = await response.json();
+        setModeUI(data.mode);
+        eventList.innerHTML = "";
+        data.recent_events.slice().reverse().forEach((event) => renderEvent(event, false));
+      }
+
+      async function updateMode(mode) {
+        const response = await fetch("/api/mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode })
+        });
+        const data = await response.json();
+        setModeUI(data.mode);
+        if (data.mode === "notify" && "Notification" in window && Notification.permission === "default") {
+          Notification.requestPermission();
+        }
+      }
+
+      notifyBtn.addEventListener("click", () => updateMode("notify"));
+      logBtn.addEventListener("click", () => updateMode("log"));
+
+      const source = new EventSource("/api/events");
+      source.addEventListener("mode", (event) => {
+        const data = JSON.parse(event.data);
+        setModeUI(data.mode);
+      });
+
+      source.addEventListener("event", (event) => {
+        const data = JSON.parse(event.data);
+        renderEvent(data, true);
+
+        if (currentMode === "notify" && "Notification" in window && Notification.permission === "granted") {
+          new Notification(data.message);
+        }
+      });
+
+      loadStatus().catch((error) => {
+        modeBadge.textContent = `加载失败：${error.message}`;
+      });
+    </script>
+  </body>
+</html>

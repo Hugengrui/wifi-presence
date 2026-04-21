@@ -1,0 +1,13 @@
+{
+  "name": "mqtt-forwarder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal MQTT event forwarder with a tiny web UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.4"
+  }
+}

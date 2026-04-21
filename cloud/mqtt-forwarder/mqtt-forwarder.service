@@ -1,0 +1,17 @@
+[Unit]
+Description=Minimal MQTT event forwarder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mqtt-forwarder
+EnvironmentFile=/etc/mqtt-forwarder.env
+ExecStart=/usr/bin/node /opt/mqtt-forwarder/server.js
+Restart=always
+RestartSec=3
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
