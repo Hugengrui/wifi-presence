@@ -12,6 +12,9 @@ Requirements:
  * MQTT broker
 
 **Contents**:
+ * [Nwrt Guide](./guide.md)
+ * [MQTT Guide](./mqtt.md)
+ * [FAQ](#faq)
  * [Quickstart](#quickstart)
  * [Motivation](#motivation)
  * [Home Assistant](#home-assistant)
@@ -28,6 +31,19 @@ Requirements:
  * [OpenWrt Luci Integration](#openwrt-luci-integration)
 
 ![wifi-presence diagram](./docs/diagram.png "Diagram of wifi-presence")
+
+## Additional Guides
+
+For the Nwrt/QCA adaptation and the MQTT installation flow used during validation, see:
+
+- [Nwrt adaptation guide](./guide.md)
+- [MQTT installation and configuration guide](./mqtt.md)
+
+## FAQ
+
+- [Hostapd and Nwrt FAQ](./faq-hostapd.md)
+- [MQTT FAQ](./faq-mqtt.md)
+- [Build and deployment FAQ](./faq-build-and-deploy.md)
 
 ## Quickstart
 

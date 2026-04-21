@@ -21,6 +21,24 @@ func TestStatusParse(t *testing.T) {
 	t.Logf("got:\n%#v", got)
 }
 
+func TestStatusParseVendorStats(t *testing.T) {
+	var got Status
+	if err := got.parse([]byte(statusMsgVendorStats)); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := Status{
+		State:      "ENABLED",
+		Channel:    40,
+		MaxTxPower: 23,
+		SSID:       "PDCN_5G",
+		BSSID:      "00:03:7f:12:da:da",
+	}
+	if got != expected {
+		t.Fatalf("got:\n%#v\nexpected:\n%#v", got, expected)
+	}
+}
+
 const statusMsg = `state=ENABLED
 phy=phy0
 freq=5260
@@ -58,6 +76,21 @@ bssid[0]=aa:bb:cc:ee:12:34
 ssid[0]=\xf0\x9f\x8c\x9d
 num_sta[0]=5
 chan_util_avg=96`
+
+const statusMsgVendorStats = `state=ENABLED
+phy=ath1
+freq=5200
+channel=40
+max_txpower=23
+bss[0]=ath1
+bssid[0]=00:03:7f:12:da:da
+ssid[0]=PDCN_5G
+num_sta[0]=1
+---- TOTAL PACKET COUNT -----------
+Total received packets total_rx = 1366
+---- TRANSMITTED PACKETS ----------
+auth_resp   = 100
+assoc_resp  = 99`
 
 func TestDecodeSSID(t *testing.T) {
 	cases := []struct {

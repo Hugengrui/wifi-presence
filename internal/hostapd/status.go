@@ -36,10 +36,16 @@ func (s *Status) parse(p []byte) error {
 	scanner := bufio.NewScanner(bytes.NewReader(p))
 	for scanner.Scan() {
 		line = scanner.Text()
+		if line == "" {
+			continue
+		}
 
 		parts = strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid status response line %q", line)
+			// Some vendor hostapd builds append human-readable statistics
+			// sections to STATUS output. Ignore any line that is not in
+			// key=value form since we only consume a small subset of fields.
+			continue
 		}
 		key, val = parts[0], parts[1]
 
