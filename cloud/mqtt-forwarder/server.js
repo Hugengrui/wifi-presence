@@ -5,10 +5,11 @@ const { URL } = require("url");
 const mqtt = require("mqtt");
 
 const PORT = Number(process.env.PORT || 8080);
-const MQTT_URL = process.env.MQTT_URL || "mqtt://127.0.0.1:1883";
+const MQTT_URL = process.env.MQTT_URL === undefined ? "mqtt://127.0.0.1:1883" : process.env.MQTT_URL.trim();
 const MQTT_TOPIC = process.env.MQTT_TOPIC || "wifi/events";
 const MQTT_USERNAME = process.env.MQTT_USERNAME || "";
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || "";
+const INGEST_TOKEN = process.env.INGEST_TOKEN || "";
 const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, "logs");
 const PUBLIC_DIR = path.join(__dirname, "public");
 const MODE_PATH = path.join(LOG_DIR, "mode.json");
@@ -56,6 +57,21 @@ function appendEvent(event) {
   if (recentEvents.length > MAX_RECENT_EVENTS) {
     recentEvents = recentEvents.slice(-MAX_RECENT_EVENTS);
   }
+}
+
+function processEvent(payload, source, topicOverride = "") {
+  const normalized = normalizePayload(payload);
+  if (!normalized) {
+    return { ok: false, error: "invalid_payload" };
+  }
+
+  normalized.topic = topicOverride || MQTT_TOPIC;
+  normalized.mode = forwardMode;
+  normalized.source = source;
+  appendEvent(normalized);
+  broadcastSSE("event", normalized);
+  console.log(`[event:${source}] ${normalized.message}`);
+  return { ok: true, event: normalized };
 }
 
 function buildMessage(payload) {
@@ -144,6 +160,34 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && reqUrl.pathname === "/ingest") {
+    if (INGEST_TOKEN) {
+      const authHeader = req.headers.authorization || "";
+      const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+      if (bearer !== INGEST_TOKEN) {
+        return sendJson(res, 401, { error: "unauthorized" });
+      }
+    }
+
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      try {
+        const body = JSON.parse(raw || "{}");
+        const result = processEvent(body, "http", "wifi/events");
+        if (!result.ok) {
+          return sendJson(res, 400, { error: result.error });
+        }
+        return sendJson(res, 200, { ok: true, event: result.event });
+      } catch (error) {
+        return sendJson(res, 400, { error: "invalid_json", detail: error.message });
+      }
+    });
+    return;
+  }
+
   if (req.method === "GET" && reqUrl.pathname === "/api/events") {
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -165,52 +209,52 @@ const server = http.createServer((req, res) => {
   sendJson(res, 404, { error: "not_found" });
 });
 
-const mqttClient = mqtt.connect(MQTT_URL, {
-  username: MQTT_USERNAME || undefined,
-  password: MQTT_PASSWORD || undefined,
-  reconnectPeriod: 3000,
-  connectTimeout: 10000
-});
-
-mqttClient.on("connect", () => {
-  console.log(`[mqtt] connected to ${MQTT_URL}`);
-  mqttClient.subscribe(MQTT_TOPIC, { qos: 1 }, (error) => {
-    if (error) {
-      console.error("[mqtt] subscribe failed:", error.message);
-      return;
-    }
-    console.log(`[mqtt] subscribed to ${MQTT_TOPIC}`);
+if (MQTT_URL) {
+  const mqttClient = mqtt.connect(MQTT_URL, {
+    username: MQTT_USERNAME || undefined,
+    password: MQTT_PASSWORD || undefined,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000
   });
-});
 
-mqttClient.on("reconnect", () => {
-  console.log("[mqtt] reconnecting...");
-});
+  mqttClient.on("connect", () => {
+    console.log(`[mqtt] connected to ${MQTT_URL}`);
+    mqttClient.subscribe(MQTT_TOPIC, { qos: 1 }, (error) => {
+      if (error) {
+        console.error("[mqtt] subscribe failed:", error.message);
+        return;
+      }
+      console.log(`[mqtt] subscribed to ${MQTT_TOPIC}`);
+    });
+  });
 
-mqttClient.on("error", (error) => {
-  console.error("[mqtt] error:", error.message);
-});
+  mqttClient.on("reconnect", () => {
+    console.log("[mqtt] reconnecting...");
+  });
 
-mqttClient.on("message", (topic, payloadBuffer) => {
-  try {
-    const payload = JSON.parse(payloadBuffer.toString("utf8"));
-    const normalized = normalizePayload(payload);
-    if (!normalized) {
-      console.warn("[mqtt] ignored payload with invalid shape");
-      return;
+  mqttClient.on("error", (error) => {
+    console.error("[mqtt] error:", error.message);
+  });
+
+  mqttClient.on("message", (topic, payloadBuffer) => {
+    try {
+      const payload = JSON.parse(payloadBuffer.toString("utf8"));
+      const result = processEvent(payload, "mqtt", topic);
+      if (!result.ok) {
+        console.warn("[mqtt] ignored payload with invalid shape");
+      }
+    } catch (error) {
+      console.error("[mqtt] invalid JSON payload:", error.message);
     }
-
-    normalized.topic = topic;
-    normalized.mode = forwardMode;
-    appendEvent(normalized);
-    broadcastSSE("event", normalized);
-    console.log(`[event] ${normalized.message}`);
-  } catch (error) {
-    console.error("[mqtt] invalid JSON payload:", error.message);
-  }
-});
+  });
+}
 
 server.listen(PORT, () => {
   console.log(`[http] listening on :${PORT}`);
   console.log(`[mode] current mode: ${forwardMode}`);
+  if (MQTT_URL) {
+    console.log(`[mqtt] bridge mode enabled: ${MQTT_URL}`);
+  } else {
+    console.log("[mqtt] disabled; using HTTP ingest only");
+  }
 });
