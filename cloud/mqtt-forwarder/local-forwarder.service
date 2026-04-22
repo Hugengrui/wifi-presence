@@ -1,0 +1,17 @@
+[Unit]
+Description=Local MQTT to cloud HTTP forwarder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/local-mqtt-forwarder
+EnvironmentFile=/etc/local-mqtt-forwarder.env
+ExecStart=/usr/bin/node /opt/local-mqtt-forwarder/local-forwarder.js
+Restart=always
+RestartSec=3
+User=misaka
+Group=misaka
+
+[Install]
+WantedBy=multi-user.target
