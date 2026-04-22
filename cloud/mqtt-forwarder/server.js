@@ -95,7 +95,14 @@ function normalizePayload(payload) {
     ip: payload.ip ? String(payload.ip) : "",
     status: payload.status,
     message: buildMessage(payload),
-    received_at: new Date().toISOString()
+    received_at: new Date().toISOString(),
+    connected_at: payload.connected_at ? String(payload.connected_at) : "",
+    disconnected_at: payload.disconnected_at ? String(payload.disconnected_at) : "",
+    connected_for: typeof payload.connected_for === "number" ? payload.connected_for : null,
+    disconnected_for: typeof payload.disconnected_for === "number" ? payload.disconnected_for : null,
+    ap_name: payload.ap_name ? String(payload.ap_name) : "",
+    ssid: payload.ssid ? String(payload.ssid) : "",
+    bssid: payload.bssid ? String(payload.bssid) : ""
   };
 }
 

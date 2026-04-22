@@ -10,8 +10,10 @@ const MQTT_USERNAME = process.env.MQTT_USERNAME || "";
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || "";
 const HTTP_ENDPOINT = process.env.HTTP_ENDPOINT || "http://4.194.30.85:8080/ingest";
 const INGEST_TOKEN = process.env.INGEST_TOKEN || "";
+const ATTRS_WAIT_MS = Number(process.env.ATTRS_WAIT_MS || 800);
 
 const deviceCache = new Map();
+const pendingAttrs = new Map();
 
 const client = mqtt.connect(MQTT_URL, {
   username: MQTT_USERNAME || undefined,
@@ -78,6 +80,10 @@ async function forwardPayload(payload) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function forwardState(topic, payload) {
   const mac = macFromTopic(topic);
   const status = toStatus(payload);
@@ -85,7 +91,11 @@ async function forwardState(topic, payload) {
     return;
   }
 
-  const cached = deviceCache.get(mac) || {};
+  if (!deviceCache.has(mac) && ATTRS_WAIT_MS > 0) {
+    await sleep(ATTRS_WAIT_MS);
+  }
+
+  const cached = deviceCache.get(mac) || pendingAttrs.get(mac) || {};
   const event = {
     device_name: cached.device_name || mac,
     mac,
@@ -93,6 +103,27 @@ async function forwardState(topic, payload) {
   };
   if (cached.ip) {
     event.ip = cached.ip;
+  }
+  if (cached.connected_at) {
+    event.connected_at = cached.connected_at;
+  }
+  if (cached.disconnected_at) {
+    event.disconnected_at = cached.disconnected_at;
+  }
+  if (typeof cached.connected_for === "number") {
+    event.connected_for = cached.connected_for;
+  }
+  if (typeof cached.disconnected_for === "number") {
+    event.disconnected_for = cached.disconnected_for;
+  }
+  if (cached.ap_name) {
+    event.ap_name = cached.ap_name;
+  }
+  if (cached.ssid) {
+    event.ssid = cached.ssid;
+  }
+  if (cached.bssid) {
+    event.bssid = cached.bssid;
   }
 
   await forwardPayload(event);
@@ -129,10 +160,19 @@ client.on("message", async (topic, payloadBuffer) => {
       if (!mac) {
         return;
       }
-      deviceCache.set(mac, {
+      const cached = {
         device_name: attrs.name || mac,
-        ip: attrs.ip || ""
-      });
+        ip: attrs.ip || "",
+        connected_at: attrs.connected_at || "",
+        disconnected_at: attrs.disconnected_at || "",
+        connected_for: typeof attrs.connected_for === "number" ? attrs.connected_for : undefined,
+        disconnected_for: typeof attrs.disconnected_for === "number" ? attrs.disconnected_for : undefined,
+        ap_name: attrs.ap_name || "",
+        ssid: attrs.ssid || "",
+        bssid: attrs.bssid || ""
+      };
+      deviceCache.set(mac, cached);
+      pendingAttrs.set(mac, cached);
       return;
     }
 
