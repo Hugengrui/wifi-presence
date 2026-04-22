@@ -159,10 +159,6 @@
 
       let currentMode = "notify";
 
-      function pad2(value) {
-        return String(value).padStart(2, "0");
-      }
-
       function formatShanghaiTime(value) {
         if (!value) return "未提供";
         const date = new Date(value);
@@ -185,7 +181,7 @@
           formatter.formatToParts(date).filter((part) => part.type !== "literal").map((part) => [part.type, part.value])
         );
 
-        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} +08:00`;
+        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
       }
 
       function setModeUI(mode) {

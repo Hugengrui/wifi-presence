@@ -121,7 +121,10 @@ function sendJson(res, statusCode, body) {
 function serveFile(res, filePath, contentType) {
   try {
     const content = fs.readFileSync(filePath);
-    res.writeHead(200, { "Content-Type": contentType });
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store"
+    });
     res.end(content);
   } catch (error) {
     sendJson(res, 404, { error: "not_found", detail: error.message });
