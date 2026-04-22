@@ -159,6 +159,35 @@
 
       let currentMode = "notify";
 
+      function pad2(value) {
+        return String(value).padStart(2, "0");
+      }
+
+      function formatShanghaiTime(value) {
+        if (!value) return "未提供";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return value;
+        }
+
+        const formatter = new Intl.DateTimeFormat("sv-SE", {
+          timeZone: "Asia/Shanghai",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false
+        });
+
+        const parts = Object.fromEntries(
+          formatter.formatToParts(date).filter((part) => part.type !== "literal").map((part) => [part.type, part.value])
+        );
+
+        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} +08:00`;
+      }
+
       function setModeUI(mode) {
         currentMode = mode;
         const label = mode === "notify" ? "当前模式：直接转发" : "当前模式：只写日志";
@@ -169,7 +198,7 @@
 
       function renderEvent(item, prepend = false) {
         const statusTime = item.status === "online" ? item.connected_at : item.disconnected_at;
-        const statusTimeLine = statusTime ? `状态时间：${statusTime}` : "状态时间：未提供";
+        const statusTimeLine = `状态时间：${formatShanghaiTime(statusTime)}`;
         const durationParts = [];
         if (typeof item.connected_for === "number") {
           durationParts.push(`已连接 ${item.connected_for}s`);
@@ -183,7 +212,7 @@
           <div>${item.message}</div>
           <div class="meta">
             <span class="status ${item.status}">${item.status}</span>
-            · 云端接收：${item.received_at}
+            · 云端接收：${formatShanghaiTime(item.received_at)}
             · ${item.device_name}
             · ${item.mac || "unknown"}
           </div>
