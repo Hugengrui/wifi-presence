@@ -10,6 +10,12 @@ import (
 // remotePath. The localPath is used for the local Unix socket file and
 // is typically in a temporary directory.
 func newUnixSocketConn(localPath, remotePath string) (*conn, error) {
+	// Clean up any stale local socket file left behind by a previous crash
+	// or forced restart before binding this client-side unixgram socket.
+	if err := removeSocketFile(localPath); err != nil {
+		return nil, err
+	}
+
 	laddr, err := net.ResolveUnixAddr("unixgram", localPath)
 	if err != nil {
 		return nil, err
@@ -29,6 +35,14 @@ func newUnixSocketConn(localPath, remotePath string) (*conn, error) {
 		localSock: laddr.String(),
 		UnixConn:  *c,
 	}, nil
+}
+
+func removeSocketFile(p string) error {
+	err := os.Remove(p)
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 // conn is a connection to hostapd's control interface.
@@ -54,7 +68,7 @@ func (c *conn) setWriteDeadline(timeout time.Duration) error {
 func (c *conn) Close() error {
 	cErr := c.UnixConn.Close()
 	// Remove local socket file.
-	fErr := os.Remove(c.localSock)
+	fErr := removeSocketFile(c.localSock)
 
 	if cErr != nil {
 		return cErr

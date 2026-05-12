@@ -218,12 +218,98 @@ mosquitto_sub -h 127.0.0.1 -p 1883 -u wifi_presence -P 'YOUR_PASSWORD' \
 
 ## 7. Nwrt 适配结论
 
+## 8. 持久化保存重启原因与启动证据
+
+Nwrt/OpenWrt 的 `logread` 和大部分运行时日志默认都在内存里。路由器如果异常重启，上一轮运行中的应用层日志通常会丢失。
+
+在本次环境中，建议额外部署一个开机自启动的 `reboot-trace` 服务，把每次启动时的关键信息落到持久化的 `/overlay/reboot-trace/`：
+
+- `reset_reason`
+- `dmesg` 开头部分
+- `watchdog` / `SSR` / `remoteproc` / `panic` 关键词
+- 当前内存信息
+- 上一次是否属于“非干净关机”
+
+当前路由器已经按这个思路配置完成。查看方式：
+
+```sh
+ls -la /overlay/reboot-trace
+readlink -f /overlay/reboot-trace/latest.log
+sed -n '1,160p' /overlay/reboot-trace/latest.log
+```
+
+目录中重要文件说明：
+
+- `boot-YYYYmmdd-HHMMSS.log`
+  每次启动生成一份启动证据快照
+- `latest.log`
+  指向最近一次快照
+- `dirty`
+  当前运行中的“未正常关机标记”
+- `last-clean-shutdown.log`
+  上一次正常关机/重启时留下的标记
+
+说明：
+
+- 如果系统是异常断电、卡死或被 watchdog 拉起，通常来不及在重启前写日志
+- 这种情况下，最有效的办法是在**下一次开机后立即读取启动早期的 `reset_reason` 和 `dmesg`**
+- 因此这个方案本质上是“启动后补捉上一次重启的证据”，而不是保证“内核崩溃前一定能落盘”
+
+如果需要检查服务本身：
+
+```sh
+/etc/init.d/reboot-trace enabled
+ls -l /etc/rc.d/*reboot-trace*
+sed -n '1,220p' /etc/init.d/reboot-trace
+```
+
 本次适配说明：
 
 - Nwrt 的 `hostapd` control socket 可以直接被 `wifi-presence` 使用
 - 需要显式配置 `hostapdSocks`
 - 需要使用兼容 QCA `STATUS` 扩展输出的二进制
 - MQTT 设备配置应通过 retained 消息统一维护
+
+现场运行经验：
+
+- 如果出现 `bind: address already in use`，通常是 `/tmp/wp.*` 这类本地 `unixgram` socket 残留。建议同时保留 init 脚本清理和修复后的二进制，双重避免残留 socket 抢占路径。
+- 本次现场里，Wi-Fi 压力测试下的整机重启最终确认是**供电问题**。更换电源后，稳定性恢复，因此不要把所有 `SSR` / `remoteproc` / `hostapd` 异常都直接归因到 `wifi-presence`。
+- 本次现场里，WAN IPv6 PD 之前无法正常下发，后续在更换 MAC 地址后恢复。这个现象更偏向运营商或上游网络侧绑定策略，建议单独记录，不要和 `wifi-presence` 故障混淆。
+
+## 9. CPU 调频与性能加速现状
+
+本次现场路由器的 CPU 调频状态为：
+
+- `cpufreq` 驱动是 `cpufreq-dt`
+- 当前 governor 是 `performance`
+- 可选 governor 包括 `conservative`、`ondemand`、`userspace`、`powersave`、`performance`
+- 但实际只暴露了一个频率档位：`1008000 kHz`
+
+这意味着：
+
+- 即使切换 governor，CPU 也没有可切换的频率档位
+- 当前效果等价于 CPU 固定运行在 `1008 MHz`
+- `powerctl` 脚本虽然存在，但对这台 `cmcc,rax3000qy` 没有带来实际的动态调频收益
+
+本次现场性能加速链路的状态为：
+
+- `qca-nss-drv` 已加载
+- `qca-nss-ecm` 已启用
+- `ECM NSS IPv4` / `ECM NSS IPv6` 前端目录存在
+- `dev.nss.ipv4cfg.ipv4_accel_mode = 1`
+- `dev.nss.ipv6cfg.ipv6_accel_mode = 1`
+- `dev.nss.pppoe.br_accel_mode = 1`
+- `dev.nss.rps.enable = 1`
+- `dev.nss.clock.auto_scale = 1`
+
+可以认为，这台机子当前常见的 QCA/NSS 加速项已经基本到位。
+
+调优建议：
+
+- **不建议**再额外叠加通用软件流量加速方案，尤其是在已经使用 QCA NSS ECM 的情况下，避免和现有加速链重叠。
+- **不建议**为了“省电”去反复切 governor。由于只有单一频点，这类改动几乎没有实际收益。
+- `irqbalance` 当前没有运行，但 NSS 关键中断已经有明确的亲和性分布，例如 `nss_queue0` 主要在 CPU0、`nss_queue1` 主要在 CPU1。对这种 2 核平台，不建议在没有压测对比的前提下盲目引入 `irqbalance`。
+- 如果后续确实要继续调优，优先做**有基线的吞吐/延迟压测**，再考虑中断亲和性或 NSS 相关参数微调，而不是先改系统开关。
 
 进一步的问题可以参考：
 

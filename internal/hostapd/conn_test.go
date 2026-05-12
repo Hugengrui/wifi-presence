@@ -2,6 +2,7 @@ package hostapd
 
 import (
 	"net"
+	"os"
 	"path"
 	"testing"
 	"time"
@@ -77,4 +78,40 @@ func TestNewUnixSocketConn(t *testing.T) {
 		t.Fatalf("Conn.Write(): got %q; expected %q", msg, string(resp))
 	}
 	t.Logf("Conn.rw.Write(): %q", string(got))
+}
+
+func TestNewUnixSocketConn_removesStaleLocalSocket(t *testing.T) {
+	hostapd, err := hostapdtest.NewHostAPD(path.Join(t.TempDir(), "hap"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hostapd.Close() })
+
+	lpath := path.Join(t.TempDir(), "local.sock")
+	laddr, err := net.ResolveUnixAddr("unixgram", lpath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale, err := net.ListenUnixgram("unixgram", laddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stale.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(lpath); err != nil {
+		t.Fatalf("expected stale socket path to remain after close: %v", err)
+	}
+
+	c, err := newUnixSocketConn(lpath, hostapd.Addr)
+	if err != nil {
+		t.Fatalf("newUnixSocketConn() with stale local socket: %v", err)
+	}
+	defer c.Close()
+
+	if _, err := os.Stat(lpath); err != nil {
+		t.Fatalf("expected bound local socket path to exist after reconnect: %v", err)
+	}
 }
