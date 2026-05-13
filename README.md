@@ -44,6 +44,7 @@ For the Nwrt/QCA adaptation and the MQTT installation flow used during validatio
 - [Hostapd and Nwrt FAQ](./faq-hostapd.md)
 - [MQTT FAQ](./faq-mqtt.md)
 - [Build and deployment FAQ](./faq-build-and-deploy.md)
+- [HTTP API FAQ](./faq-http-api.md)
 
 ## Quickstart
 
