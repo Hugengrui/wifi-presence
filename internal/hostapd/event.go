@@ -58,8 +58,16 @@ func parseEvent(msg string) (Event, error) {
 	case strings.HasPrefix(msg, eventAPStaDisconnected):
 		// Station disconnect event. Example:
 		// "<3>AP-STA-DISCONNECTED 04:ab:00:12:34:56"
+		// "AP-STA-DISCONNECTED 04:ab:00:12:34:56 reason=3"
 
 		mac := strings.TrimSpace(strings.TrimPrefix(msg, eventAPStaDisconnected))
+
+		// Some hostapd builds append extra fields after the MAC address.
+		// Treat them the same way as connect events and keep only the MAC.
+		if len(mac) > macLength {
+			mac = mac[:macLength]
+		}
+
 		if !isMAC(mac) {
 			return nil, fmt.Errorf("invalid MAC address %q", mac)
 		}

@@ -49,6 +49,14 @@ func TestParseEvent(t *testing.T) {
 			},
 		},
 		{
+			name:  "disconnect with reason",
+			input: "AP-STA-DISCONNECTED 04:ab:00:12:34:56 reason=3",
+			expected: EventStationDisconnect{
+				raw: "AP-STA-DISCONNECTED 04:ab:00:12:34:56 reason=3",
+				MAC: "04:ab:00:12:34:56",
+			},
+		},
+		{
 			name:     "terminating",
 			input:    "<3>CTRL-EVENT-TERMINATING",
 			expected: EventTerminating("<3>CTRL-EVENT-TERMINATING"),

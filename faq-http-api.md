@@ -50,7 +50,9 @@ http://4.194.30.85:15057
 
 - `mode` 取值为 `notify` 或 `log`
 - `mqtt.url` 在 HTTP ingest 模式下可以为空字符串
-- `recent_events` 是最近缓存的事件列表
+- `recent_events` 只返回一个很小的内存缓存
+- 当前服务端会限制为最新 `50` 条以内
+- `recent_events` 不承担翻页职责，小程序拉历史应使用 `/logs`
 
 ### `POST /api/mode`
 
@@ -111,32 +113,69 @@ data: {"device_name":"iPhone","mac":"AA:BB:CC:DD:EE:FF","status":"online"}
 
 ### `GET /logs`
 
-返回最近事件列表的 JSON 数组。
+按分页返回事件列表。
+
+请求示例：
+
+```text
+GET /logs?offset=0&limit=40&order=desc
+```
+
+参数：
+
+- `offset`
+  非负整数，从第几条开始
+- `limit`
+  正整数，服务端会做上限保护
+- `order`
+  `desc` 或 `asc`
+
+当前服务端约束：
+
+- 默认 `offset=0`
+- 默认 `limit=40`
+- 默认 `order=desc`
+- `limit` 最大值为 `100`
+- 不带分页参数时，也不会返回全量日志
 
 示例响应结构：
 
 ```json
-[
-  {
-    "topic": "wifi/events",
-    "device_name": "iPhone",
-    "mac": "AA:BB:CC:DD:EE:FF",
-    "ip": "192.168.1.2",
-    "status": "online",
-    "message": "设备上线：iPhone (AA:BB:CC:DD:EE:FF) - 192.168.1.2",
-    "received_at": "2026-05-13T04:00:00.000Z",
-    "connected_at": "",
-    "disconnected_at": "",
-    "connected_for": null,
-    "disconnected_for": null,
-    "ap_name": "Nwrt",
-    "ssid": "PDCN_5G",
-    "bssid": "00:03:7f:12:da:da",
-    "mode": "notify",
-    "source": "http"
-  }
-]
+{
+  "items": [
+    {
+      "topic": "wifi/events",
+      "device_name": "iPhone",
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "ip": "192.168.1.2",
+      "status": "online",
+      "message": "设备上线：iPhone (AA:BB:CC:DD:EE:FF) - 192.168.1.2",
+      "received_at": "2026-05-13T04:00:00.000Z",
+      "connected_at": "",
+      "disconnected_at": "",
+      "connected_for": null,
+      "disconnected_for": null,
+      "ap_name": "Nwrt",
+      "ssid": "PDCN_5G",
+      "bssid": "00:03:7f:12:da:da",
+      "mode": "notify",
+      "source": "http"
+    }
+  ],
+  "offset": 0,
+  "limit": 40,
+  "count": 1,
+  "has_more": true
+}
 ```
+
+排序说明：
+
+- `desc` 表示最新事件在前
+- `asc` 表示最旧事件在前
+- 服务端优先按 `received_at` 排序
+- 如果没有 `received_at`，会回退到 `connected_at` / `disconnected_at`
+- 同一时间的事件会按写入顺序做稳定排序
 
 ### `POST /ingest`
 

@@ -16,6 +16,8 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const MODE_PATH = path.join(LOG_DIR, "mode.json");
 const EVENT_LOG_PATH = path.join(LOG_DIR, "events.jsonl");
 const MAX_RECENT_EVENTS = 200;
+const MAX_STATUS_EVENTS = 50;
+const MAX_LOG_LIMIT = 100;
 
 fs.mkdirSync(LOG_DIR, { recursive: true });
 
@@ -58,6 +60,82 @@ function appendEvent(event) {
   if (recentEvents.length > MAX_RECENT_EVENTS) {
     recentEvents = recentEvents.slice(-MAX_RECENT_EVENTS);
   }
+}
+
+function toEpochMillis(value) {
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getEventSortTimestamp(event) {
+  return toEpochMillis(event.received_at) || toEpochMillis(event.connected_at) || toEpochMillis(event.disconnected_at);
+}
+
+function getRecentStatusEvents(limit = MAX_STATUS_EVENTS) {
+  return recentEvents.slice(-limit);
+}
+
+function loadAllEvents(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8").trim();
+    if (!raw) return [];
+
+    return raw
+      .split("\n")
+      .map((line, index) => {
+        const parsed = JSON.parse(line);
+        return {
+          ...parsed,
+          _seq: index
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+function paginateEvents(allEvents, offset, limit, order) {
+  const sorted = allEvents
+    .slice()
+    .sort((a, b) => {
+      const timeDiff = getEventSortTimestamp(a) - getEventSortTimestamp(b);
+      if (timeDiff !== 0) {
+        return order === "asc" ? timeDiff : -timeDiff;
+      }
+
+      const seqDiff = (a._seq || 0) - (b._seq || 0);
+      return order === "asc" ? seqDiff : -seqDiff;
+    });
+
+  const items = sorted.slice(offset, offset + limit).map(({ _seq, ...event }) => event);
+  return {
+    items,
+    offset,
+    limit,
+    count: items.length,
+    has_more: offset + items.length < sorted.length
+  };
+}
+
+function parseOffsetParam(value) {
+  const parsed = Number.parseInt(value || "0", 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return parsed;
+}
+
+function parseLimitParam(value) {
+  const parsed = Number.parseInt(value || "40", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 40;
+  }
+  return Math.min(parsed, MAX_LOG_LIMIT);
+}
+
+function parseOrderParam(value) {
+  return value === "asc" ? "asc" : "desc";
 }
 
 function processEvent(payload, source, topicOverride = "") {
@@ -271,7 +349,7 @@ const server = http.createServer((req, res) => {
         url: MQTT_URL,
         topic: MQTT_TOPIC
       },
-      recent_events: recentEvents
+      recent_events: getRecentStatusEvents()
     });
   }
 
@@ -339,7 +417,11 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === "GET" && reqUrl.pathname === "/logs") {
-    return sendJson(res, 200, recentEvents);
+    const offset = parseOffsetParam(reqUrl.searchParams.get("offset"));
+    const limit = parseLimitParam(reqUrl.searchParams.get("limit"));
+    const order = parseOrderParam(reqUrl.searchParams.get("order"));
+    const allEvents = loadAllEvents(EVENT_LOG_PATH);
+    return sendJson(res, 200, paginateEvents(allEvents, offset, limit, order));
   }
 
   sendJson(res, 404, { error: "not_found" });
